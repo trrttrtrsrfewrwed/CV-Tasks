@@ -9,6 +9,10 @@ from OpenGL.GL.shaders import *
 import numpy as np
 import cv2
 
+from wand.image import Image
+
+import PIL
+
 vertex_shader = """
 varying vec3 vN;
 varying vec3 v;
@@ -54,14 +58,21 @@ textureCoordinates = ((0, 0), (0, 1), (1, 1), (1, 0))
 
 surfaces = (
     (0, 1, 2, 3),
-    )
+)
 
 normals = [
-    (0,  0, 1),  # surface 0
+    (0, 0, 1),  # surface 0
 ]
 
 
 def draw_rect(verticies, normals, surfaces):
+    glEnable(GL_LINE_SMOOTH)
+    glEnable(GL_POLYGON_SMOOTH)
+    glHint(GL_LINE_SMOOTH_HINT, GL_NICEST)
+    glHint(GL_POLYGON_SMOOTH_HINT, GL_NICEST)
+    glEnable(GL_BLEND)
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA)
+
     glColor3f(1, 1, 1)
     glBegin(GL_QUADS)
     for i_surface, surface in enumerate(surfaces):
@@ -93,9 +104,9 @@ def lamp_lightning(lamp_x=0.5, lamp_y=0.5):
 
 
 def lightning():
-    glLight(GL_LIGHT0, GL_POSITION,  (0, 0, 3, 1))
+    glLight(GL_LIGHT0, GL_POSITION, (0, 0, 3, 1))
     # Diffuse lighting
-    glLightfv(GL_LIGHT0, GL_DIFFUSE, (255/255, 225/255, 195/255, 1))
+    glLightfv(GL_LIGHT0, GL_DIFFUSE, (255 / 255, 225 / 255, 195 / 255, 1))
     return
 
 
@@ -127,7 +138,7 @@ def process(n_iter,
 
     pygame.init()
     display = (4000, 4000)
-    pygame.display.set_mode(display, DOUBLEBUF|OPENGL)
+    pygame.display.set_mode(display, DOUBLEBUF | OPENGL)
 
     # shaders for "lamp" light
     program = compileProgram(
@@ -139,7 +150,7 @@ def process(n_iter,
 
     # Setting camera's field of view
     glMatrixMode(GL_PROJECTION)
-    gluPerspective(45, (display[0]/display[1]), 0.1, 50.0)
+    gluPerspective(45, (display[0] / display[1]), 0.1, 50.0)
 
     glMatrixMode(GL_MODELVIEW)
 
@@ -172,7 +183,7 @@ def process(n_iter,
 
     image_buffer = glReadPixels(0, 0, display[0], display[1], GL_RGB, GL_UNSIGNED_BYTE)
     image1 = np.frombuffer(image_buffer, dtype=np.uint8).reshape(display[0], display[1], 3)
-    cv2.imwrite("image1.png", cv2.cvtColor(image1, cv2.COLOR_RGB2BGR))
+    # cv2.imwrite("image1.png", cv2.cvtColor(image1, cv2.COLOR_RGB2BGR))
 
     # basic light
     lightning()
@@ -195,50 +206,62 @@ def process(n_iter,
 
     image_buffer = glReadPixels(0, 0, display[0], display[1], GL_RGB, GL_UNSIGNED_BYTE)
     image2 = np.frombuffer(image_buffer, dtype=np.uint8).reshape(display[0], display[1], 3)
-    cv2.imwrite("image2.png", cv2.cvtColor(image2, cv2.COLOR_RGB2BGR))
+    # cv2.imwrite("image2.png", cv2.cvtColor(image2, cv2.COLOR_RGB2BGR))
 
     grayscale = np.dot(image1, [0.114, 0.587, 0.299])
     res = cv2.cvtColor(np.array(image2 * np.repeat(np.expand_dims(grayscale, axis=-1), 3, axis=-1) / 255
-                                                    * 0.9 + image1 * 0.1, dtype=np.uint8), cv2.COLOR_RGB2BGR)
-    cv2.imwrite("image3.png", res)
+                                * 0.9 + image1 * 0.1, dtype=np.uint8), cv2.COLOR_RGB2BGR)
+    # cv2.imwrite("image3.png", res)
+    filename = img_name[:-4] + "_" + str(n_iter) + "_out.png"
 
-    # with Image.from_array(res) as img:
-    #     # Generate noise image using spread() function
-    #     img.noise("poisson", attenuate=0.9)
-    #     img.save(filename="image4.png")
+    # smoothing
+    res = cv2.GaussianBlur(res, (0, 0), sigmaX=1, sigmaY=1, borderType=cv2.BORDER_DEFAULT)
+    # cv2.imwrite("image4.png",  res)
 
+    # # resize
+    res = cv2.resize(res, dsize=(1300, 1300), interpolation=cv2.INTER_CUBIC)
+    # cv2.imwrite("image5.png", res)
 
-    # # Generate Gaussian noise
-    # gauss = np.random.normal(0, 1, res.size)
-    # gauss = gauss.reshape(res.shape).astype('uint8')
-    # # Add the Gaussian noise to the image
-    # img_gauss = cv2.add(res, gauss)
-    #
-    # cv2.imwrite("image4.png", img_gauss)
+    cv2.imwrite(filename, res)
 
-    # cv2.imwrite(img_name[:-4] + "_" + str(n_iter) + "_out.png", res)
+    # noise
+    # with Image(filename="image5.png") as res:
+    with Image(filename=filename) as res:
+        res.noise("laplacian", attenuate=1)
+        res.noise("impulse", attenuate=0.01)
+        res.save(filename=filename)
+        # res.save(filename="image6.png")
+
+    res = cv2.imread(filename)
+    # res = cv2.imread('image6.png')
+
+    # smoothing
+    res = cv2.GaussianBlur(res, (0, 0), sigmaX=0.5, sigmaY=0.5, borderType=cv2.BORDER_DEFAULT)
+    # cv2.imwrite("image7.png", res)
+    cv2.imwrite(filename, res)
+
     pygame.quit()
 
 
 def main():
-    rotate_angle_x = random.randrange(-6, 6)
-    rotate_angle_y = random.randrange(-6, 6)
-    rotate_angle_z = random.randrange(-6, 6)
-    lamp_x = random.uniform(-0.5, 0.5)
-    lamp_y = random.uniform(-0.5, 0.5)
-    process(0, "1.png", rotate_angle_x, rotate_angle_y, rotate_angle_z, lamp_x, lamp_y)
+    # rotate_angle_x = random.randrange(-6, 6)
+    # rotate_angle_y = random.randrange(-6, 6)
+    # rotate_angle_z = random.randrange(-6, 6)
+    # lamp_x = random.uniform(-0.5, 0.5)
+    # lamp_y = random.uniform(-0.5, 0.5)
+    # process(0, "1.png", rotate_angle_x, rotate_angle_y, rotate_angle_z, lamp_x, lamp_y)
 
-    # N_IMAGES = 10
-    # N_ITERS = 10
-    # for i in range(N_IMAGES):
-    #     img_name = str(i + 1) + ".png"
-    #     for j in range(N_ITERS):
-    #         rotate_angle_x = random.randrange(-6, 6)
-    #         rotate_angle_y = random.randrange(-6, 6)
-    #         rotate_angle_z = random.randrange(-6, 6)
-    #         lamp_x = random.uniform(-0.5, 0.5)
-    #         lamp_y = random.uniform(-0.5, 0.5)
-    #         process(j, img_name, rotate_angle_x, rotate_angle_y, rotate_angle_z, lamp_x, lamp_y)
+    N_IMAGES = 10
+    N_ITERS = 10
+    for i in range(N_IMAGES):
+        img_name = str(i + 1) + ".png"
+        for j in range(N_ITERS):
+            rotate_angle_x = random.randrange(-6, 6)
+            rotate_angle_y = random.randrange(-6, 6)
+            rotate_angle_z = random.randrange(-6, 6)
+            lamp_x = random.uniform(-0.5, 0.5)
+            lamp_y = random.uniform(-0.5, 0.5)
+            process(j, img_name, rotate_angle_x, rotate_angle_y, rotate_angle_z, lamp_x, lamp_y)
 
 
 main()
